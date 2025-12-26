@@ -1,17 +1,72 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
+from typing import Union
+import tempfile
 
-app = FastAPI(title="PDF Readability Checker")
+from app.storage.memory import save_result, get_result
+from app.tasks.readability_task import run_readability_task
+from app.models import (
+    ReadabilityJobResponse,
+    ReadabilityProcessingResponse,
+    ReadabilityCompletedResponse
+)
 
-@app.post("/check_readability")
-async def check_readability(file: UploadFile = File(...)):
+app = FastAPI(title="PDF Readability Service", version="1.0.0")
+
+@app.get("/")
+def health_check():
+    return {"status": "ok"}
+
+@app.post("/readability", response_model=ReadabilityJobResponse)
+async def check_readability(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...)
+):
     if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="File must be a PDF")
+        raise HTTPException(status_code=400, detail="PDF only")
 
-    pdf_bytes = await file.read()
-    text = extract_text_from_pdf(pdf_bytes)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        tmp.write(await file.read())
+        pdf_path = tmp.name
 
-    readable = is_readable(text)
+    result_id = save_result({"status": "processing"})
 
-    return {
-        "readable": readable
-    }
+    background_tasks.add_task(
+        run_readability_task,
+        result_id,
+        pdf_path
+    )
+
+    return ReadabilityJobResponse(
+        id=result_id,
+        status="processing"
+    )
+
+@app.get(
+    "/readability/result/{result_id}",
+    response_model=Union[
+        ReadabilityProcessingResponse,
+        ReadabilityCompletedResponse
+    ]
+)
+def get_readability_result(result_id: str):
+    result = get_result(result_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Result not found")
+
+    if result["status"] == "processing":
+        return ReadabilityProcessingResponse(
+            id=result_id,
+            status="processing"
+        )
+
+    return ReadabilityCompletedResponse(
+    id=result_id,
+    status="completed",
+    readable=result["readable"],
+    flesch_score=result.get("flesch_score"),
+    avg_sentence_length=result.get("avg_sentence_length"),
+    avg_word_length=result.get("avg_word_length"),
+    score=result.get("score"),
+    reason=result.get("reason")
+)
+
