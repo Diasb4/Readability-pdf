@@ -1,5 +1,4 @@
 
-````markdown
 # PDF Readability Assessor
 
 This project provides a service to assess the readability of PDF documents. It calculates metrics such as Flesch Reading Ease, average sentence length, and average word length. The service can be run locally using Docker.
