@@ -1,4 +1,3 @@
-Ah! I see — you want the README to **clearly highlight Docker commands** in their own section so users can copy-paste easily. Here’s an updated version of your `README.md` with a dedicated **Docker Commands** section:
 
 ````markdown
 # PDF Readability Assessor
